@@ -1712,36 +1712,103 @@ double do_md(FILE *fplog,t_commrec *cr,int nfile,const t_filenm fnm[],
 
 
 
-/*
-|||||||||||||||||||||||||
-||||                 ||||   
-|||| Initializations ||||
-||||                 ||||
-|||||||||||||||||||||||||
-*/
+    /*
+    |||||||||||||||||||||||||
+    ||||                 ||||   
+    |||| Initializations ||||
+    ||||                 ||||
+    |||||||||||||||||||||||||
+    */
 
-static char run_dir[1024]; 
-getcwd(run_dir, 1024);
-strcat(run_dir, "/IONIZATION_DATA/"); 
-
-
-
-int num_atoms = top_global->natoms;
-int num_steps = ir->nsteps;
-
-SimulationData simData; 
-
-loadSimData(&simData,num_steps,num_atoms);
+    static char run_dir[1024]; 
+    getcwd(run_dir, 1024);
+    strcat(run_dir, "/IONIZATION_DATA/"); 
 
 
 
-/*
-|||||||||||||||||||||||||
-||||                 ||||   
-||||Stuff initialized||||
-||||                 ||||
-|||||||||||||||||||||||||
-*/
+    int num_atoms = top_global->natoms;
+    int num_steps = ir->nsteps;
+
+    SimulationData simData; 
+
+    loadSimData(&simData,num_steps,num_atoms);
+
+
+
+    {//// INPUT VALIDATION
+        
+
+        ///
+        char line[4096];
+        int reader1; 
+        double reader2; 
+        double reader3; 
+
+        epsilon_array = (double*)malloc(40 * sizeof(double));
+        sigma_array = (double*)malloc(40 * sizeof(double));
+        ATOM_Z = (int*)malloc(40 * sizeof(int));
+
+        char lennard_jones_parameters[1024]; 
+
+
+        strcpy(lennard_jones_parameters, run_dir);
+        strcat(lennard_jones_parameters, "/lennard_jones_parameters.txt"); // two previous lines, what we had before
+
+        FILE *fp_lj_params = fopen(lennard_jones_parameters, "r");
+
+        if (fp_lj_params == NULL)
+        {
+            printf("Failed to open LJ param file.\n");
+            exit(0);
+            return 1;
+        }
+
+        i = 0;
+        while (fgets(line, sizeof(line), fp_lj_params)) {
+            // read which atoms are in this particular MPI process // 
+            sscanf(line, "%i %lf %lf", &reader1, &reader2, &reader3); 
+            ATOM_Z[i] = reader1;
+            sigma_array[i] = reader2; 
+            epsilon_array[i] = reader3; 
+            
+            i+=1;
+
+        }
+        fclose(fp_lj_params);
+        ////
+
+
+        t_mdatoms* all_mdatoms= init_mdatoms(fplog,top_global,FALSE);
+        atoms2md(top_global,ir,0,NULL,0,top_global->natoms,all_mdatoms);
+        
+        int size;
+        MPI_Comm_size(MPI_COMM_WORLD, &size);
+        if (size > 1) {
+            MPI_Bcast(&ATOM_Z,1,MPI_DOUBLE,0,MPI_COMM_WORLD);
+            MPI_Barrier(MPI_COMM_WORLD);
+        }
+        for(int j=0; j<2000; j++) {
+            for(int i=0; i<num_atoms; i++) {     
+                int Z=ATOM_Z[all_mdatoms->typeA[i]];
+                if (simData.charges[j][i] > Z){
+                    char *error_message = (char*)malloc(200 * sizeof(char));
+                    sprintf(error_message,"Charge greater than atomic number:\n(type A) ATOM_Z = %i,charge= %i, step=%i,atom_idx=%i\n",Z,simData.charges[j][i],j,i);
+                    gmx_fatal(FARGS,error_message);
+                }
+            } 
+        }
+    }//// END INPUT VALIDATION
+
+
+
+
+    /*
+    |||||||||||||||||||||||||
+    ||||                 ||||   
+    ||||Stuff initialized||||
+    ||||                 ||||
+    |||||||||||||||||||||||||
+    */
 
 
 
@@ -2143,7 +2210,7 @@ loadSimData(&simData,num_steps,num_atoms);
     MPI_Comm_rank(MPI_COMM_WORLD, &rank);
     MPI_Comm_size(MPI_COMM_WORLD, &size);
 
-    
+
     int *states = (int*)malloc(mdatoms->nr * sizeof(int));
     unsigned short int* charge_states  = simData.charges[current_step];
 
