@@ -1735,7 +1735,7 @@ double do_md(FILE *fplog,t_commrec *cr,int nfile,const t_filenm fnm[],
 
 
 
-    {//// INPUT VALIDATION
+    {//// USER DEFINED INPUT VALIDATION 
         
 
         ///
@@ -1787,7 +1787,7 @@ double do_md(FILE *fplog,t_commrec *cr,int nfile,const t_filenm fnm[],
             MPI_Bcast(&ATOM_Z,1,MPI_DOUBLE,0,MPI_COMM_WORLD);
             MPI_Barrier(MPI_COMM_WORLD);
         }
-        for(int j=0; j<2000; j++) {
+        for(int j=0; j<ir->nsteps; j++) {
             for(int i=0; i<num_atoms; i++) {     
                 int Z=ATOM_Z[all_mdatoms->typeA[i]];
                 if (simData.charges[j][i] > Z){
